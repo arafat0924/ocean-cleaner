@@ -1,0 +1,105 @@
+OCEAN CLEANER - GAME DATA
+=========================
+
+Part 1. Ocean facts shown in the game
+-------------------------------------
+One fact is shown before every level and on the Game Over / Win screen (chosen at random).
+
+1. "Around 11 million tonnes of plastic go into the ocean every year."
+   - Estimate for the year 2016. Without action it could reach about 29 million tonnes a year by 2040.
+   - Often explained as "one garbage truck of plastic every minute".
+   - Source: The Pew Charitable Trusts & SYSTEMIQ, "Breaking the Plastic Wave" (2020)
+     https://www.pewtrusts.org/en/research-and-analysis/articles/2020/07/23/breaking-the-plastic-wave-top-findings
+
+2. "Sea turtles eat plastic bags, which can look and even smell like their food."
+   - The old idea: a floating bag looks like a jellyfish.
+   - A 2020 study (Current Biology) found that plastic covered in algae and bacteria
+     also smells like food to sea turtles.
+   - Sources: WWF, "What do sea turtles eat? Unfortunately, plastic bags"
+     https://www.worldwildlife.org/stories/what-do-sea-turtles-eat-unfortunately-plastic-bags
+     NOAA Institutional Repository record of the 2020 study
+     https://repository.library.noaa.gov/view/noaa/62576
+
+3. "A plastic bottle is estimated to take up to 450 years to break down in the sea."
+   - A widely used ESTIMATE (NOAA / Woods Hole Sea Grant chart). NOAA itself says the real time
+     depends on the material, size and conditions, so it is not an exact number.
+   - The bottle does not really disappear: it breaks into microplastics (pieces smaller than 5 mm).
+   - Sources: World Economic Forum chart, "How long everyday plastic items last in the ocean" (2018)
+     https://www.weforum.org/stories/2018/11/chart-of-the-day-this-is-how-long-everyday-plastic-items-last-in-the-ocean
+     NOAA Ocean Service, marine debris
+     https://oceanservice.noaa.gov/education/tutorial-coastal/marine-debris/md03.html
+
+4. "Oil spills cover the feathers of sea birds and the gills of fish."
+   - Oil ruins the waterproofing of feathers, so birds can die of cold; birds also swallow oil
+     while cleaning themselves. Fish are harmed through their gills and by eating oily food.
+   - Source: NOAA Ocean Service, "How does oil impact marine life?"
+     https://oceanservice.noaa.gov/facts/oilimpacts.html
+
+5. "More than 800 kinds of sea animals are harmed by ocean litter."
+   - The 2016 UN report counted 817 species (663 in 2012), mostly from eating plastic and from
+     being caught in lost fishing nets ("ghost gear").
+   - Source: Secretariat of the Convention on Biological Diversity (CBD), "Marine Debris: Understanding,
+     Preventing and Mitigating the Significant Adverse Impacts on Marine and Coastal Biodiversity" (2016)
+     https://news.un.org/en/node/547032
+
+6. "Tiny pieces of plastic have been found in the deepest ocean trench."
+   - Microplastic fibres were found inside small animals (amphipods) living in the Mariana Trench.
+   - A plastic bag has also been recorded at 10,898 m depth in the Mariana Trench.
+   - Sources: Jamieson et al., Royal Society Open Science (2019)
+     https://pmc.ncbi.nlm.nih.gov/articles/PMC6408374/
+     National Geographic, "Plastic bag found at the bottom of world's deepest ocean trench" (2018)
+     https://www.nationalgeographic.com/science/article/plastic-bag-mariana-trench-pollution-science-spd
+
+7. "Using a reusable bottle and bag is the easiest way to help the ocean."
+   - This is advice, not a measured fact. It follows from facts 1 and 3: less single-use plastic
+     means less plastic that can reach the sea.
+
+
+Part 2. Game rules and numbers
+------------------------------
+Window: 480 x 700 pixels, 60 frames per second.
+
+Levels
+  Level 1  The Coast   goal: clean 25 pieces   background: sea  (scroll speed 1)    trash: bottle, can, bag;  animals: fish
+  Level 2  Open Sea    goal: clean 35 pieces   background: sea  (scroll speed 1.5)  + oil spills (15% of new trash), turtles
+  Level 3  Deep Sea    goal: clean 30 pieces   background: deep (scroll speed 2)    + jellyfish, oil (20%), then the POLLUTER boss
+  New trash appears every 55 / 45 / 40 frames (level 1 / 2 / 3).
+  After each level: ocean health +20 and +1 vacuum charge.
+
+Player (submarine)
+  Lives: 3
+  Speed: 5 pixels per frame (half speed for 2 seconds after touching oil)
+  Net: 1 net every 10 frames, speed 9 pixels per frame
+  After being hurt: 1.5 seconds without new damage (the submarine blinks)
+
+Ocean health
+  Starts at 100. Game over at 0.
+  Trash that sinks to the bottom lowers it (see the table below).
+  A trapped turtle that leaves the screen: -10.
+
+Trash             points when cleaned   ocean damage if it sinks   hits needed
+  bottle                10                        5                    1
+  can                   10                        4                    1
+  plastic bag           15                        8                    1
+  big oil spill         30                       10                    3 (splits into 2 small spills)
+  small oil spill       10                        5                    1
+  toxic barrel          20                        8                    2  (touching it costs 1 life)
+  Bottles, cans and bags are also cleaned by touching them with the submarine.
+
+Sea life
+  Fish, turtle: hitting them with a net costs 20 points.
+  Turtle + plastic bag: the turtle gets trapped. Shooting the bag frees it: +50 points.
+  Jellyfish: touching one costs 1 life.
+
+Power-ups (8% chance to drop from cleaned trash)
+  Triple net : 3 nets at once for 10 seconds
+  Vacuum     : +1 charge (max 3). Press V to clean all trash within 170 pixels.
+  Shield     : no damage for 8 seconds
+  Health     : +1 life, or ocean health +15 if lives are full
+
+POLLUTER boss (end of level 3)
+  Health: 40 net hits
+  Drops a barrel or small oil spill every 70 frames (every 50 frames when below half health)
+  Defeating it: +500 points and the game is won
+
+High score: saved in highscore.txt next to main.py.
