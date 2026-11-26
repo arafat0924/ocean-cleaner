@@ -1,0 +1,16 @@
+# player data
+highscore.txt
+progress.json
+
+# python
+__pycache__/
+*.pyc
+
+# unfinished source pictures
+raw/
+
+# presentation files (not part of the repo)
+docs/*.pptx
+docs/speech.txt
+docs/possible_questions.txt
+docs/ppt_assets/
