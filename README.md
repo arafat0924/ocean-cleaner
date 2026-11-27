@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/banner.png" width="100%" alt="Ocean Cleaner">
+  <img src="docs/readme/banner.jpg" width="100%" alt="Ocean Cleaner">
 </p>
 
 <h1 align="center">Ocean Cleaner</h1>
@@ -7,10 +7,10 @@
 <p align="center">An arcade game about cleaning the ocean, made with Python and Pygame Zero</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white">
-  <img src="https://img.shields.io/badge/Pygame_Zero-1.2-2ECC71?style=flat-square">
-  <img src="https://img.shields.io/badge/Levels-100-F7861E?style=flat-square">
-  <img src="https://img.shields.io/badge/Course-Final_Project-5CE1E6?style=flat-square">
+  <img src="docs/readme/badge_python.svg">
+  <img src="docs/readme/badge_pgzero.svg">
+  <img src="docs/readme/badge_levels.svg">
+  <img src="docs/readme/badge_course.svg">
 </p>
 
 <hr>
@@ -53,14 +53,14 @@ about ocean pollution.
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/readme/menu.png" width="230"><br><sub>Menu</sub></td>
-    <td align="center"><img src="docs/readme/levels.png" width="230"><br><sub>100 levels</sub></td>
-    <td align="center"><img src="docs/readme/help.png" width="230"><br><sub>How to play</sub></td>
+    <td align="center"><img src="docs/readme/menu.jpg" width="230"><br><sub>Menu</sub></td>
+    <td align="center"><img src="docs/readme/levels.jpg" width="230"><br><sub>100 levels</sub></td>
+    <td align="center"><img src="docs/readme/help.jpg" width="230"><br><sub>How to play</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/readme/play_coast.png" width="230"><br><sub>The Coast</sub></td>
-    <td align="center"><img src="docs/readme/play_sea.png" width="230"><br><sub>Open Sea</sub></td>
-    <td align="center"><img src="docs/readme/boss.png" width="230"><br><sub>The POLLUTER</sub></td>
+    <td align="center"><img src="docs/readme/play_coast.jpg" width="230"><br><sub>The Coast</sub></td>
+    <td align="center"><img src="docs/readme/play_sea.jpg" width="230"><br><sub>Open Sea</sub></td>
+    <td align="center"><img src="docs/readme/boss.jpg" width="230"><br><sub>The POLLUTER</sub></td>
   </tr>
 </table>
 
@@ -68,28 +68,9 @@ about ocean pollution.
 
 <h3 align="center">The Cast</h3>
 
-<table align="center">
-  <tr>
-    <td align="center"><img src="docs/readme/icon_sub.png" width="48"><br><sub>Submarine</sub></td>
-    <td align="center"><img src="docs/readme/icon_net.png" width="48"><br><sub>Net</sub></td>
-    <td align="center"><img src="docs/readme/icon_bottle.png" width="48"><br><sub>Bottle +10</sub></td>
-    <td align="center"><img src="docs/readme/icon_can.png" width="48"><br><sub>Can +10</sub></td>
-    <td align="center"><img src="docs/readme/icon_bag.png" width="48"><br><sub>Bag +15</sub></td>
-    <td align="center"><img src="docs/readme/icon_oil_big.png" width="48"><br><sub>Oil +30</sub></td>
-    <td align="center"><img src="docs/readme/icon_barrel.png" width="48"><br><sub>Barrel</sub></td>
-    <td align="center"><img src="docs/readme/icon_boss.png" width="48"><br><sub>Boss</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/readme/icon_fish_left.png" width="48"><br><sub>Fish</sub></td>
-    <td align="center"><img src="docs/readme/icon_turtle.png" width="48"><br><sub>Turtle</sub></td>
-    <td align="center"><img src="docs/readme/icon_turtle_trapped.png" width="48"><br><sub>Trapped +50</sub></td>
-    <td align="center"><img src="docs/readme/icon_jelly.png" width="48"><br><sub>Jellyfish</sub></td>
-    <td align="center"><img src="docs/readme/icon_pu_triple.png" width="48"><br><sub>Triple net</sub></td>
-    <td align="center"><img src="docs/readme/icon_pu_shield.png" width="48"><br><sub>Shield</sub></td>
-    <td align="center"><img src="docs/readme/icon_pu_vacuum.png" width="48"><br><sub>Vacuum</sub></td>
-    <td align="center"><img src="docs/readme/icon_pu_health.png" width="48"><br><sub>Health</sub></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/readme/cast.png" width="830" alt="The cast">
+</p>
 
 <hr>
 
@@ -119,7 +100,7 @@ stars and the best scores are saved in <code>progress.json</code>.
 <h3 align="center">Built With</h3>
 
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=python,vscode,git,github&theme=dark">
+  <img src="docs/readme/built_with.svg">
 </p>
 
 <hr>
