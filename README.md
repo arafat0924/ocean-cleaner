@@ -35,6 +35,12 @@
 </table>
 
 <p align="justify">
+I built this game because the global environment crisis matters to me. Instead of a made up story,
+it is based on a real problem that affects all of us: plastic and oil polluting the ocean. My aim was
+to turn that concern into something people can play, learn from and remember.
+</p>
+
+<p align="justify">
 You drive a cleaning submarine and catch falling trash with nets. Every piece that sinks hurts the
 ocean, so you cannot just hide. Fish and turtles must not be hit, plastic bags trap turtles that you
 have to free, and oil spills split and slow you down. Before every level the game shows a real fact
@@ -148,4 +154,4 @@ Mariana Trench. Sources: Pew 2020, NOAA, UN CBD 2016, WWF and Jamieson et al. 20
 
 <hr>
 
-<p align="center">Made with 💙 by <b>Md. Arafat Hosen</b></p>
+<p align="center">Made with concern for the environment by <b>Md. Arafat Hosen</b> 🌍</p>
