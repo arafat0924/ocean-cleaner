@@ -1,30 +1,32 @@
 #  OCEAN CLEANER
 #  A Pygame Zero game about ocean pollution.
 #  The player drives a cleaning submarine, catches falling trash with nets,
-#  avoids hurting sea life, and finally defeats the POLLUTER ship.
+#  avoids hurting sea life, and stops the POLLUTER ship on every 10th level.
 #
 #  How Pygame Zero runs this file:
 #    - update() is called 60 times a second: it changes the game (movement, rules)
 #    - draw()   is called after it: it paints the screen
 #    - on_key_down(), on_mouse_move(), on_mouse_down() are called on input
-#  Pictures come from images/, sounds from sounds/ (found by file name).
+#  Pictures come from images/, sounds from sounds/, fonts from fonts/ (found by file name).
 #
 #  File layout:
-#    1. settings and data tables      6. update: one function per part of the game
+#    1. settings and data             6. update: one function per part of the game
 #    2. game state variables          7. draw: one function per screen
-#    3. small helpers (score, sound)  8. keyboard and mouse input
-#    4. starting games and levels     9. start the game
+#    3. small helpers                 8. keyboard and mouse input
+#    4. levels, progress, end         9. start the game
 #    5. spawning trash / animals
 
 import os
 import sys
 import math
+import json
 import random
 
 # the folder of this file. It must be read before "import pgzrun",
 # because pgzrun replaces __file__ with pgzero's own path
 BASE = os.path.dirname(os.path.abspath(__file__))
 
+import pygame
 import pgzrun
 from pgzero import loaders
 
@@ -32,41 +34,70 @@ if not os.path.isdir(os.path.join(BASE, 'images')):
     BASE = os.path.abspath(loaders.root)      # started with "pgzrun main.py": use the game folder
 
 
-# 1. SETTINGS AND DATA TABLES
+# 1. SETTINGS AND DATA
 WIDTH = 480                 # window size (Pygame Zero reads WIDTH, HEIGHT and TITLE)
 HEIGHT = 700
 TITLE = 'Ocean Cleaner'
 
-SCORE_FILE = os.path.join(BASE, 'highscore.txt')
+SCORE_FILE = os.path.join(BASE, 'highscore.txt')      # best score of a single level
+PROGRESS_FILE = os.path.join(BASE, 'progress.json')   # unlocked level, stars and best score per level
 BG_H = 852                  # height of a background picture (taller than the window)
 HUD_H = 46                  # height of the information bar at the top
 
+# fonts from the fonts/ folder
+TITLE_FONT = 'bungee'       # big titles
+UI_FONT = 'lilitaone'       # buttons, panel titles, messages
+NUM_FONT = 'righteous'      # numbers in the top bar
+TEXT_FONT = 'kanit'         # text you read (help, facts)
+
 SUB_SPEED = 5               # submarine speed, pixels per frame
 NET_SPEED = 9               # net speed, pixels per frame
-FIRE_DELAY = 10          # frames between two nets
+FIRE_DELAY = 10             # frames between two nets
 MAX_LIVES = 3
 MAX_VACUUM = 3              # vacuum charges you can keep
 VACUUM_RANGE = 170          # the vacuum cleans trash closer than this (pixels)
 
-# one dictionary per level:
-#   goal          trash to clean to finish the level
-#   spawn         frames between two new pieces of trash
-#   scroll        background speed
-#   trash         kinds of trash that can appear (a name twice = twice as likely)
-#   speed         (slowest, fastest) falling speed
-#   animals       sea animals that can appear, animal_chance = chance per new trash
-#   oil_chance    chance that the new trash is a big oil spill
-LEVELS = [
-    {'name': 'Level 1: The Coast', 'bg': 'bg_sea', 'goal': 25, 'spawn': 55, 'scroll': 1,
-     'trash': ['bottle', 'bottle', 'can', 'bag'], 'speed': (1.2, 2.0),
-     'animals': ['fish'], 'animal_chance': 0.35, 'oil_chance': 0.0},
-    {'name': 'Level 2: Open Sea', 'bg': 'bg_sea', 'goal': 35, 'spawn': 45, 'scroll': 1.5,
-     'trash': ['bottle', 'can', 'bag', 'bag'], 'speed': (1.5, 2.6),
-     'animals': ['fish', 'turtle', 'turtle'], 'animal_chance': 0.4, 'oil_chance': 0.15},
-    {'name': 'Level 3: Deep Sea', 'bg': 'bg_deep', 'goal': 30, 'spawn': 40, 'scroll': 2,
-     'trash': ['bottle', 'can', 'bag'], 'speed': (1.8, 3.0),
-     'animals': ['fish', 'fish', 'turtle', 'jelly'], 'animal_chance': 0.45, 'oil_chance': 0.2},
+LEVEL_COUNT = 100
+LEVELS_PER_PAGE = 20        # level select shows 4 x 5 tiles per page
+
+# the place changes every level: coast, open sea, deep sea, coast again ...
+THEMES = [
+    {'place': 'The Coast', 'bg': 'bg_coast', 'scroll': 1.0, 'tile': 'coast'},
+    {'place': 'Open Sea', 'bg': 'bg_sea', 'scroll': 1.5, 'tile': 'sea'},
+    {'place': 'Deep Sea', 'bg': 'bg_deep', 'scroll': 2.0, 'tile': 'deep'},
 ]
+
+
+def level_config(n):
+    # the 100 levels are made from a few formulas: each level is a little harder,
+    # and every number has a limit so the late levels stay playable
+    theme = THEMES[(n - 1) % len(THEMES)]       # coast, sea, deep, coast, sea ... (a new place every level)
+    boss = n % 10 == 0
+    animals = ['fish']
+    if n >= 3:
+        animals += ['turtle']                 # turtles (and the bag rescue) from level 3
+    if n >= 8:
+        animals += ['jelly']                  # jellyfish from level 8
+    goal = min(36, 15 + n // 4)
+    return {
+        'n': n,
+        'name': 'Level %d' % n,
+        'place': theme['place'],
+        'bg': theme['bg'],
+        'scroll': theme['scroll'],
+        'tile': theme['tile'],
+        'boss': boss,
+        'goal': goal // 2 if boss else goal,  # boss levels: less trash, then the boss
+        'spawn': max(30, round(56 - n * 0.3)),              # frames between new trash
+        'speed': (min(2.2, 1.1 + n * 0.012), min(3.1, 1.9 + n * 0.013)),
+        'trash': ['bottle', 'bottle', 'can', 'bag'] if n < 8 else ['bottle', 'can', 'bag', 'bag'],
+        'animals': animals,
+        'animal_chance': min(0.45, 0.3 + n * 0.003),
+        'oil_chance': 0 if n < 5 else min(0.25, 0.06 + n * 0.0025),
+        'boss_hp': 25 + (n // 10) * 3,       # 28 on level 10 ... 55 on level 100
+        'boss_drop': max(56, 80 - (n // 10) * 2),           # frames between barrels
+    }
+
 
 # points when cleaned, ocean damage when it sinks to the bottom, hits needed
 TRASH = {
@@ -89,6 +120,40 @@ FACTS = [
     'Using a reusable bottle and bag is the easiest way to help the ocean.',
 ]
 
+# help pages: (title, rows of (picture, heading, text))
+HELP_PAGES = [
+    ('Controls', [
+        ('sub', 'Move', 'Arrow keys or W A S D'),
+        ('net', 'Throw nets', 'Hold SPACE, up to 6 nets a second'),
+        ('pu_vacuum', 'Vacuum', 'Press V to clean all trash near you'),
+        ('heart', 'Other keys', 'P pause,  R restart,  M sound,  ESC back'),
+    ]),
+    ('Trash', [
+        ('bottle', 'Bottle and can  +10', 'If they sink, the ocean loses health'),
+        ('bag', 'Plastic bag  +15', 'Careful: it can trap a turtle'),
+        ('oil_big', 'Oil spill  +30', '3 hits, splits in two, touching it slows you'),
+        ('barrel', 'Toxic barrel', 'Dropped by the boss, it costs a life'),
+    ]),
+    ('Sea life', [
+        ('fish_left', 'Fish', 'Never hit it with a net: -20 points'),
+        ('turtle', 'Turtle', 'Never hit it with a net: -20 points'),
+        ('turtle_trapped', 'Trapped turtle', 'Hit the bag to free it: +50 points'),
+        ('jelly', 'Jellyfish', 'Its sting costs you a life, swim around it'),
+    ]),
+    ('Power-ups', [
+        ('pu_triple', 'Triple net', '3 nets at once for 10 seconds'),
+        ('pu_shield', 'Shield', 'No damage for 8 seconds'),
+        ('pu_vacuum', 'Vacuum', '+1 charge (keep up to 3), press V'),
+        ('pu_health', 'Health', '+1 life, or ocean +15 when lives are full'),
+    ]),
+    ('Goal', [
+        ('heart', '3 lives per level', 'Jellyfish and barrels take a life'),
+        ('splash', 'Ocean health 100', 'Sinking trash lowers it. At 0 you lose'),
+        ('star_big_on', 'Stars', 'More ocean health left = more stars'),
+        ('boss', '100 levels', 'Every 10th level the POLLUTER ship attacks'),
+    ]),
+]
+
 
 def has_image(name):
     # optional pictures (the face) are only drawn if the file exists
@@ -99,14 +164,23 @@ def has_image(name):
 # An Actor is a picture with a position. Pygame Zero loads 'bg_sea' from images/bg_sea.jpg
 bg1 = Actor('bg_sea')       # two copies of the background, one above the other,
 bg2 = Actor('bg_sea')       # so it can scroll forever (same idea as the course aircraft game)
+menu_bg = Actor('bg_menu', midtop=(WIDTH / 2, -76))
 sub = Actor('sub')          # the player's submarine
 shield_ring = Actor('shield')
 boss = Actor('boss')
-logo = Actor('logo', center=(WIDTH / 2, 110))
+logo = Actor('logo', center=(WIDTH / 2, 92))
 buttons = {
-    'start': Actor('btn_start', center=(WIDTH / 2, 400)),
-    'help': Actor('btn_help', center=(WIDTH / 2, 470)),
-    'quit': Actor('btn_quit', center=(WIDTH / 2, 540)),
+    'start': Actor('btn_start', center=(WIDTH / 2, 404)),
+    'help': Actor('btn_help', center=(WIDTH / 2, 476)),
+    'quit': Actor('btn_quit', center=(WIDTH / 2, 548)),
+}
+back_btn = Actor('btn_back', center=(38, 40))
+prev_btn = Actor('btn_prev', center=(130, 630))
+next_btn = Actor('btn_next', center=(350, 630))
+panel_buttons = {
+    'next': Actor('pb_next', center=(WIDTH / 2, 470)),
+    'retry': Actor('pb_retry', center=(WIDTH / 2 - 95, 535)),
+    'levels': Actor('pb_levels', center=(WIDTH / 2 + 95, 535)),
 }
 
 
@@ -114,18 +188,27 @@ buttons = {
 # Pygame Zero's update() and draw() take no arguments, so the state is kept
 # in module variables (functions change them with "global").
 # All timers count frames: 60 frames = 1 second.
-state = 'menu'          # menu, help, intro, play, gameover, win
+state = 'menu'          # menu, help, levels, intro, play, clear, gameover
 paused = False
 muted = False
 music_on = False
-level = 0               # 0, 1, 2 = level 1, 2, 3
-score = 0
+cfg = level_config(1)   # settings of the level being played
+level = 1               # number of the level being played (1 to 100)
+unlocked = 1            # highest level you may play
+stars = {}              # level number -> best stars (1 to 3)
+best = {}               # level number -> best score
 high_score = 0
 new_record = False
+level_page = 0          # page of the level select screen
+help_page = 0
+hover_tile = None       # level tile under the mouse
+clear_frame = 0         # frame when the level was cleared (stars pop in after it)
+earned_stars = 0
+score = 0
 lives = MAX_LIVES
 ocean = 100             # ocean health
 cleaned = 0             # trash cleaned in this level
-frame = 0               # counts every update(), used for blinking and bubbles
+frame = 0               # counts every update(), used for blinking and animations
 spawn_timer = 0         # frames since the last new trash
 fire_timer = 0          # frames until the next net can be thrown
 hurt_timer = 0          # after a hit the submarine is safe while this is above 0
@@ -136,9 +219,9 @@ vacuum_charges = 1
 vacuum_fx = 0           # frames left of the vacuum circle animation
 boss_active = False
 boss_hp = 0
+boss_max_hp = 0
 boss_drop_timer = 0     # frames until the boss drops the next barrel
 boss_dead_timer = 0     # boss explosion animation at the end
-intro_header = ''       # extra line on the level intro screen
 end_reason = ''         # why the game ended (shown on the end screen)
 fact = ''               # the fact shown now
 
@@ -152,26 +235,37 @@ texts = []              # [text, x, y, frames left, color]
 bubbles = []            # [x, y, frames left]
 
 
-# 3. SMALL HELPERS: high score, sound, floating text, effects
-def load_high_score():
-    global high_score
+# 3. SMALL HELPERS: saving, sound, text, panels, effects
+def load_progress():
+    global high_score, unlocked, stars, best
     try:
         with open(SCORE_FILE) as f:
             high_score = int(f.read().strip() or 0)
     except (OSError, ValueError):
         high_score = 0          # no file yet, or a broken file
+    try:
+        with open(PROGRESS_FILE) as f:
+            data = json.load(f)
+        unlocked = max(1, min(LEVEL_COUNT, int(data.get('unlocked', 1))))
+        # json keys are text, the game uses numbers
+        stars = {int(k): v for k, v in data.get('stars', {}).items()}
+        best = {int(k): v for k, v in data.get('best', {}).items()}
+    except (OSError, ValueError, AttributeError):
+        unlocked, stars, best = 1, {}, {}
 
 
-def save_high_score():
+def save_progress():
     global high_score, new_record
     new_record = score > high_score
     if new_record:
         high_score = score
-        try:
-            with open(SCORE_FILE, 'w') as f:
-                f.write(str(high_score))
-        except OSError:
-            pass
+    try:
+        with open(SCORE_FILE, 'w') as f:
+            f.write(str(high_score))
+        with open(PROGRESS_FILE, 'w') as f:
+            json.dump({'unlocked': unlocked, 'stars': stars, 'best': best}, f)
+    except OSError:
+        pass
 
 
 def play(name):
@@ -205,6 +299,26 @@ def stop_music():
         pass
 
 
+def say(text, size, font=UI_FONT, color='white', outline=1.2, **where):
+    # draw text with a dark outline so it is easy to read on any background
+    screen.draw.text(text, fontname=font, fontsize=size, color=color,
+                     owidth=outline, ocolor=(5, 20, 40), **where)
+
+
+def glass(x, y, w, h, color=(8, 30, 60), alpha=215, border=(120, 240, 200), radius=18):
+    # a rounded, see-through panel (drawn with pygame because Pygame Zero has no rounded boxes)
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.draw.rect(s, color + (alpha,), s.get_rect(), border_radius=radius)
+    if border:
+        pygame.draw.rect(s, border + (255,), s.get_rect(), 2, border_radius=radius)
+    screen.blit(s, (x, y))
+
+
+def hover_image(actor, base, pos):
+    # button hover effect: switch to the _hover picture when the mouse is over it
+    actor.image = base + '_hover' if actor.collidepoint(pos) else base
+
+
 def float_text(text, x, y, color='white'):
     # a short message ("+10", "Shield!") that floats up for 60 frames
     half = len(text) * 6 + 10          # keep the text inside the window
@@ -217,24 +331,19 @@ def add_effect(image, pos, frames=18):
     effects.append([Actor(image, center=pos), frames])
 
 
-# 4. STARTING GAMES AND LEVELS, ENDING THE GAME
-def new_game():
-    global level, score, lives, ocean, vacuum_charges, new_record
-    level = 0
+# 4. LEVELS, PROGRESS AND THE END OF A LEVEL
+def start_level(n):
+    # reset everything for level n and show the intro screen
+    global cfg, level, score, lives, ocean, vacuum_charges, new_record
+    global cleaned, spawn_timer, fire_timer, hurt_timer, slow_timer, triple_timer, shield_timer
+    global vacuum_fx, boss_active, boss_dead_timer, state, paused, fact
+    level = n
+    cfg = level_config(n)
     score = 0
     lives = MAX_LIVES
     ocean = 100
     vacuum_charges = 1
     new_record = False
-    start_level('')
-    start_music()
-
-
-def start_level(header):
-    # reset everything that belongs to one level and show the intro screen
-    global cleaned, spawn_timer, fire_timer, hurt_timer, slow_timer, triple_timer, shield_timer
-    global vacuum_fx, boss_active, boss_dead_timer, state, paused, intro_header, fact
-    cfg = LEVELS[level]
     bg1.image = cfg['bg']
     bg2.image = cfg['bg']
     bg1.x = bg2.x = WIDTH / 2
@@ -250,37 +359,71 @@ def start_level(header):
     boss_active = False
     boss_dead_timer = 0
     paused = False
-    intro_header = header
     fact = random.choice(FACTS)     # awareness: a random real fact for this level
     state = 'intro'
 
 
-def level_complete():
-    # reward for finishing a level, then go to the next one
-    global level, ocean, vacuum_charges
+def stars_for(ocean_left):
+    # more ocean health left at the end = more stars
+    if ocean_left >= 75:
+        return 3
+    if ocean_left >= 45:
+        return 2
+    return 1
+
+
+def level_clear():
+    # the level is finished: give stars, unlock the next level and save
+    global state, unlocked, earned_stars, clear_frame, fact
+    if state != 'play':
+        return
+    earned_stars = stars_for(ocean)
+    stars[level] = max(stars.get(level, 0), earned_stars)
+    best[level] = max(best.get(level, 0), score)
+    unlocked = max(unlocked, min(LEVEL_COUNT, level + 1))
+    save_progress()
+    fact = random.choice(FACTS)
+    clear_frame = frame
     play('level')
-    ocean = min(100, ocean + 20)
-    vacuum_charges = min(MAX_VACUUM, vacuum_charges + 1)
-    level += 1
-    start_level('Level complete!  Ocean +20, Vacuum +1')
+    state = 'clear'
 
 
-def end_game(reason, won=False):
+def game_over(reason):
     global state, end_reason, fact
     if state != 'play':             # the game can only end once
         return
     end_reason = reason
     fact = random.choice(FACTS)
-    save_high_score()
     stop_music()
-    play('level' if won else 'gameover')
-    state = 'win' if won else 'gameover'
+    play('gameover')
+    state = 'gameover'
+
+
+def open_levels():
+    # level select screen, opened on the page of the highest unlocked level
+    global state, level_page, hover_tile
+    level_page = (unlocked - 1) // LEVELS_PER_PAGE
+    hover_tile = None
+    state = 'levels'
+
+
+def tile_rect(i):
+    # position of the i-th tile (0 to 19) on a level select page: 4 columns, 5 rows
+    col, row = i % 4, i // 4
+    return Rect(55 + col * 96, 100 + row * 96, 82, 82)
+
+
+def tile_at(pos):
+    for i in range(LEVELS_PER_PAGE):
+        if tile_rect(i).collidepoint(pos):
+            n = level_page * LEVELS_PER_PAGE + i + 1
+            return n if n <= LEVEL_COUNT else None
+    return None
 
 
 # 5. SPAWNING (making new trash, animals and power-ups)
 # Extra values are stored on the Actor itself (t.kind, t.hp, t.vy ...).
 def spawn_trash(kind=None, x=None, y=None):
-    cfg = LEVELS[level]
     if kind is None:
         kind = random.choice(cfg['trash'])                  # random kind for this level
     t = Actor(kind)
@@ -301,7 +444,6 @@ def spawn_trash(kind=None, x=None, y=None):
 
 
 def spawn_animal():
-    cfg = LEVELS[level]
     kind = random.choice(cfg['animals'])
     if kind == 'jelly':
         # jellyfish come from the top and float down
@@ -375,7 +517,7 @@ def hurt_sub(reason):
     float_text(reason, sub.x, sub.y - 50, 'red')
     if lives <= 0:
         add_effect('boom', sub.pos, 40)
-        end_game('Your submarine was destroyed.')
+        game_over('Your submarine was destroyed.')
 
 
 def damage_ocean(amount, x, y):
@@ -384,7 +526,7 @@ def damage_ocean(amount, x, y):
     ocean = max(0, ocean - amount)
     float_text('Ocean -' + str(amount), x, HEIGHT - 40, 'orange')
     if ocean <= 0:
-        end_game('The ocean is too polluted.')
+        game_over('The ocean is too polluted.')
 
 
 def fire():
@@ -413,11 +555,11 @@ def use_vacuum():
 
 
 def start_boss():
-    global boss_active, boss_hp, boss_drop_timer
+    global boss_active, boss_hp, boss_max_hp, boss_drop_timer
     boss_active = True
-    boss_hp = 40                     # nets needed to defeat it
+    boss_hp = boss_max_hp = cfg['boss_hp']   # nets needed to defeat it
     boss_drop_timer = 90
-    boss.pos = (WIDTH / 2, -70)      # starts above the screen and moves in
+    boss.pos = (WIDTH / 2, -70)              # starts above the screen and moves in
     boss.vx = 1.5
     float_text('The POLLUTER is coming!', WIDTH / 2, HEIGHT / 2, 'red')
 
@@ -427,8 +569,8 @@ def start_boss():
 def update():
     global frame
     frame += 1
-    # music also plays on the menu (it is stopped on the game over / win screen)
-    if not muted and not music_on and state not in ('gameover', 'win'):
+    # music plays on every screen except game over
+    if not muted and not music_on and state != 'gameover':
         start_music()
     if state != 'play' or paused:
         return                       # nothing moves on menus or while paused
@@ -451,7 +593,7 @@ def update():
 
 def update_background():
     # both pictures move down; the one that leaves the screen jumps above the other
-    speed = LEVELS[level]['scroll']
+    speed = cfg['scroll']
     bg1.y += speed
     bg2.y += speed
     if bg1.y > BG_H / 2 + BG_H:
@@ -506,7 +648,6 @@ def update_sub():
 def update_spawning():
     # every 'spawn' frames a new trash appears, sometimes with an animal
     global spawn_timer
-    cfg = LEVELS[level]
     spawn_timer += 1
     every = cfg['spawn'] * (1.6 if boss_active else 1)   # less trash during the boss
     if spawn_timer < every:
@@ -676,12 +817,12 @@ def update_powerups():
 
 
 def check_level_goal():
-    # enough trash cleaned: next level, or the boss after level 3
-    if not boss_active and cleaned >= LEVELS[level]['goal']:
-        if level < len(LEVELS) - 1:
-            level_complete()
-        else:
+    # enough trash cleaned: the level is done, or the boss comes on every 10th level
+    if not boss_active and cleaned >= cfg['goal']:
+        if cfg['boss']:
             start_boss()
+        else:
+            level_clear()
 
 
 def update_boss():
@@ -694,7 +835,8 @@ def update_boss():
         boss.vx = -boss.vx           # back and forth
     boss_drop_timer -= 1
     if boss_drop_timer <= 0:
-        boss_drop_timer = 70 if boss_hp > 20 else 50     # angrier when weak
+        # angrier when weak: drops faster below half health
+        boss_drop_timer = cfg['boss_drop'] if boss_hp > boss_max_hp // 2 else cfg['boss_drop'] - 20
         kind = 'oil_small' if random.random() < 0.3 else 'barrel'
         b = spawn_trash(kind, boss.x, boss.bottom)
         b.vy = 3
@@ -703,7 +845,7 @@ def update_boss():
 def boss_defeated():
     global boss_dead_timer, score
     score += 500
-    boss_dead_timer = 90             # 1.5 seconds of explosions before the win screen
+    boss_dead_timer = 90             # 1.5 seconds of explosions before the clear screen
     float_text('POLLUTER defeated! +500', WIDTH / 2, HEIGHT / 2, 'yellow')
     trash.clear()
 
@@ -717,7 +859,7 @@ def update_boss_death():
     boss.y -= 0.5
     update_effects()
     if boss_dead_timer <= 0:
-        end_game('You stopped the POLLUTER and saved the ocean!', won=True)
+        level_clear()
 
 
 def update_effects():
@@ -740,15 +882,22 @@ def draw():
         draw_menu()
     elif state == 'help':
         draw_help()
+    elif state == 'levels':
+        draw_levels()
     else:
         draw_world()
         draw_hud()
         if state == 'intro':
             draw_intro()
-        elif state == 'gameover' or state == 'win':
-            draw_end()
+        elif state == 'clear':
+            draw_clear()
+        elif state == 'gameover':
+            draw_gameover()
         elif paused:
-            draw_panel('Paused', ['Press P to continue', 'R to restart,  ESC for menu'])
+            glass(50, 240, WIDTH - 100, 200)
+            say('PAUSED', 44, TITLE_FONT, 'yellow', center=(WIDTH / 2, 295))
+            say('P  continue', 26, UI_FONT, center=(WIDTH / 2, 355))
+            say('R  restart     ESC  levels', 22, UI_FONT, center=(WIDTH / 2, 395))
 
 
 def draw_world():
@@ -781,7 +930,7 @@ def draw_world():
     for e in effects:
         e[0].draw()
     for text, x, y, left, color in texts:
-        screen.draw.text(text, center=(x, y), fontsize=24, color=color, owidth=1, ocolor='black')
+        say(text, 20, UI_FONT, color, center=(x, y))
 
 
 def draw_hud():
@@ -790,35 +939,35 @@ def draw_hud():
     screen.draw.line((0, HUD_H), (WIDTH, HUD_H), (120, 240, 200))
     for i in range(lives):
         screen.blit('heart', (8 + i * 26, 4))
-    screen.draw.text('Score ' + str(score), topleft=(90, 4), fontsize=24, color='white')
-    screen.draw.text('L' + str(level + 1), topleft=(205, 4), fontsize=24, color=(120, 240, 200))
+    screen.draw.text('Score ' + str(score), topleft=(88, 4), fontname=NUM_FONT, fontsize=19, color='white')
+    screen.draw.text('Lv ' + str(level), topright=(250, 4), fontname=NUM_FONT, fontsize=19, color=(120, 240, 200))
 
     # ocean health bar: green, then yellow, then red
-    screen.draw.text('Ocean', topleft=(8, 28), fontsize=17, color='white')
-    screen.draw.rect(Rect(52, 30, 112, 12), 'white')
+    screen.draw.text('Ocean', topleft=(8, 28), fontname=NUM_FONT, fontsize=13, color='white')
+    screen.draw.rect(Rect(56, 30, 108, 12), 'white')
     color = (60, 200, 90) if ocean > 60 else (230, 200, 40) if ocean > 30 else (230, 60, 50)
-    screen.draw.filled_rect(Rect(53, 31, int(110 * ocean / 100), 10), color)
+    screen.draw.filled_rect(Rect(57, 31, int(106 * ocean / 100), 10), color)
 
     # boss health bar, or the level goal
     if boss_active:
-        screen.draw.text('POLLUTER', topleft=(180, 27), fontsize=17, color='red')
-        screen.draw.rect(Rect(255, 30, 102, 12), 'white')
-        screen.draw.filled_rect(Rect(256, 31, int(100 * max(0, boss_hp) / 40), 10), (220, 50, 50))
+        screen.draw.text('POLLUTER', topleft=(178, 27), fontname=NUM_FONT, fontsize=15, color='red')
+        screen.draw.rect(Rect(262, 30, 96, 12), 'white')
+        screen.draw.filled_rect(Rect(263, 31, int(94 * max(0, boss_hp) / max(1, boss_max_hp)), 10), (220, 50, 50))
     else:
-        screen.draw.text('Trash %d/%d' % (cleaned, LEVELS[level]['goal']), topleft=(180, 27),
-                         fontsize=18, color='white')
+        screen.draw.text('Trash %d/%d' % (cleaned, cfg['goal']), topleft=(178, 26),
+                         fontname=NUM_FONT, fontsize=16, color='white')
 
     # vacuum charges and seconds left of the timed power-ups
     for i in range(vacuum_charges):
-        screen.blit('vac_icon', (250 + i * 22, 4))
+        screen.blit('vac_icon', (258 + i * 22, 4))
     timers = []
     if triple_timer > 0:
         timers.append('x3 %d' % (triple_timer // 60 + 1))
     if shield_timer > 0:
         timers.append('S %d' % (shield_timer // 60 + 1))
-    screen.draw.text('  '.join(timers), topleft=(320, 6), fontsize=20, color='orange')
+    screen.draw.text('  '.join(timers), topleft=(326, 5), fontname=NUM_FONT, fontsize=18, color='orange')
     if muted:
-        screen.draw.text('Sound off', topleft=(372, 30), fontsize=15, color='orange')
+        screen.draw.text('Sound off', topleft=(368, 29), fontname=NUM_FONT, fontsize=13, color='orange')
 
     # pilot face: sad after a hit, happy with triple net
     face = 'face_small'
@@ -830,159 +979,289 @@ def draw_hud():
         screen.blit(face, (WIDTH - 46, -1))
 
 
-def draw_panel(title, lines, title_color='white'):
-    # box in the middle of the screen (intro, pause, game over)
-    screen.draw.filled_rect(Rect(30, 190, WIDTH - 60, 300), (8, 30, 60))
-    screen.draw.rect(Rect(30, 190, WIDTH - 60, 300), (120, 240, 200))
-    screen.draw.text(title, center=(WIDTH / 2, 235), fontsize=44, color=title_color)
-    y = 285
-    for line in lines:
-        screen.draw.text(line, midtop=(WIDTH / 2, y), width=WIDTH - 100, align='center',
-                         fontsize=24, color='white')
-        y += 34 if len(line) < 38 else 56      # long lines wrap to two rows
+def draw_star_row(n, cx, y, big=False):
+    # 3 stars, the first n are gold
+    name, step = ('star_big', 50) if big else ('star', 20)
+    for i in range(3):
+        img = name + ('_on' if i < n else '_off')
+        screen.blit(img, (cx - step * 1.5 + i * step, y))
 
 
 def draw_intro():
-    cfg = LEVELS[level]
-    lines = []
-    if intro_header:
-        lines.append(intro_header)
-    lines.append('Clean %d pieces of trash' % cfg['goal'] + (' and stop the POLLUTER' if level == 2 else ''))
-    lines.append('Did you know? ' + fact)
-    lines.append('Press ENTER to start')
-    draw_panel(cfg['name'], lines, (120, 240, 200))
+    glass(30, 170, WIDTH - 60, 350)
+    say(cfg['name'], 40, TITLE_FONT, (120, 240, 200), center=(WIDTH / 2, 215))
+    say(cfg['place'], 26, UI_FONT, 'white', center=(WIDTH / 2, 258))
+    goal = 'Clean %d pieces of trash' % cfg['goal']
+    if cfg['boss']:
+        goal = 'Clean %d trash, then stop the POLLUTER!' % cfg['goal']
+    say(goal, 20, UI_FONT, 'yellow', center=(WIDTH / 2, 298))
+    screen.draw.text('Did you know? ' + fact, midtop=(WIDTH / 2, 330), width=WIDTH - 110, align='center',
+                     fontname=TEXT_FONT, fontsize=20, color='white')
+    if (frame // 30) % 2 == 0:       # blinking hint
+        say('Press ENTER or click to start', 22, UI_FONT, (120, 240, 200), center=(WIDTH / 2, 485))
 
 
-def draw_end():
-    won = state == 'win'
-    lines = [end_reason, 'Score: %d   Best: %d' % (score, high_score)]
+def draw_clear():
+    glass(30, 120, WIDTH - 60, 470)
+    title = 'ALL LEVELS DONE!' if level == LEVEL_COUNT else 'LEVEL CLEAR!'
+    say(title, 34 if level == LEVEL_COUNT else 38, TITLE_FONT, 'yellow', center=(WIDTH / 2, 165))
+    # stars pop in one after another
+    shown = min(earned_stars, (frame - clear_frame) // 20)
+    draw_star_row(shown, WIDTH / 2, 195, big=True)
+    say('Score %d      Best %d' % (score, best.get(level, score)), 24, UI_FONT, center=(WIDTH / 2, 268))
+    say('Ocean health left: %d' % ocean, 20, UI_FONT, (120, 240, 200), center=(WIDTH / 2, 300))
     if new_record:
-        lines.append('New high score!')
-    lines.append(fact)
-    lines.append('ENTER: play again   ESC: menu')
-    draw_panel('You saved the ocean!' if won else 'Game Over', lines, 'yellow' if won else 'red')
+        say('New high score!', 22, UI_FONT, 'orange', center=(WIDTH / 2, 330))
+    screen.draw.text(fact, midtop=(WIDTH / 2, 350), width=WIDTH - 110, align='center',
+                     fontname=TEXT_FONT, fontsize=18, color='white')
+    if level < LEVEL_COUNT:
+        panel_buttons['next'].draw()
+    panel_buttons['retry'].draw()
+    panel_buttons['levels'].draw()
+
+
+def draw_gameover():
+    glass(30, 150, WIDTH - 60, 430, border=(255, 110, 110))
+    say('GAME OVER', 42, TITLE_FONT, (255, 90, 90), center=(WIDTH / 2, 200))
+    say(end_reason, 22, UI_FONT, center=(WIDTH / 2, 250))
+    say('Level %d     Score %d' % (level, score), 24, UI_FONT, 'yellow', center=(WIDTH / 2, 290))
+    screen.draw.text(fact, midtop=(WIDTH / 2, 330), width=WIDTH - 110, align='center',
+                     fontname=TEXT_FONT, fontsize=18, color='white')
+    panel_buttons['retry'].draw()
+    panel_buttons['levels'].draw()
 
 
 def draw_menu():
-    # the sea scrolls slowly behind the menu
-    bg1.image = 'bg_sea'
-    bg2.image = 'bg_sea'
-    bg1.pos = (WIDTH / 2, BG_H / 2 + (frame * 0.5) % BG_H)
-    bg2.pos = (WIDTH / 2, bg1.y - BG_H)
-    bg1.draw()
-    bg2.draw()
+    menu_bg.draw()
     logo.draw()
     if has_image('face'):
-        screen.blit('face', (WIDTH / 2 - 64, 190))
-        screen.draw.text("Let's save the ocean!", center=(WIDTH / 2, 335), fontsize=26,
-                         color='white', owidth=1, ocolor='black')
+        screen.blit('face', (WIDTH / 2 - 64, 175))
+        say("Let's save the ocean!", 26, UI_FONT, center=(WIDTH / 2, 325))
     else:
         screen.blit('sub', (WIDTH / 2 - 32, 205))
-        screen.draw.text("Let's save the ocean!", center=(WIDTH / 2, 320), fontsize=26,
-                         color='white', owidth=1, ocolor='black')
+        say("Let's save the ocean!", 26, UI_FONT, center=(WIDTH / 2, 320))
+    # the START button bobs a little to catch the eye
+    buttons['start'].y = 404 + math.sin(frame / 15) * 3
     for b in buttons.values():
         b.draw()
-    screen.draw.text('High score: ' + str(high_score), center=(WIDTH / 2, 610), fontsize=26, color='yellow',
-                     owidth=1.2, ocolor='black')
-    screen.draw.text('M: sound ' + ('OFF' if muted else 'ON'), center=(WIDTH / 2, 650), fontsize=20,
-                     color='orange' if muted else 'white', owidth=1, ocolor='black')
+    glass(90, 590, WIDTH - 180, 88, alpha=170)
+    screen.blit('star_on', (150, 600))
+    say('%d / %d' % (sum(stars.values()), LEVEL_COUNT * 3), 22, UI_FONT, 'yellow', midleft=(176, 609))
+    say('Level %d unlocked' % unlocked, 18, UI_FONT, midleft=(150, 636))
+    say('M: sound ' + ('OFF' if muted else 'ON'), 16, UI_FONT, 'orange' if muted else 'white',
+        midleft=(150, 660))
+
+
+def draw_levels():
+    menu_bg.draw()
+    glass(15, 75, WIDTH - 30, 515, alpha=150, border=None)
+    back_btn.draw()
+    say('SELECT LEVEL', 30, TITLE_FONT, center=(WIDTH / 2 + 20, 42))
+    for i in range(LEVELS_PER_PAGE):
+        n = level_page * LEVELS_PER_PAGE + i + 1
+        if n > LEVEL_COUNT:
+            break
+        r = tile_rect(i)
+        c = level_config(n)
+        if n > unlocked:
+            screen.blit('tile_locked', r.topleft)
+            continue
+        img = 'tile_%s' % c['tile'] + ('_hover' if n == hover_tile else '')
+        lift = -2 if n == hover_tile else 0
+        screen.blit(img, (r.x, r.y + lift))
+        say(str(n), 30, UI_FONT, center=(r.centerx, r.centery - 8 + lift))
+        if c['boss']:
+            say('BOSS', 13, UI_FONT, (255, 120, 90), center=(r.centerx, r.top + 12 + lift))
+        if n in stars:
+            draw_star_row(stars[n], r.centerx, r.bottom - 27 + lift)
+        elif n == unlocked and (frame // 20) % 2 == 0:
+            say('NEW', 13, UI_FONT, 'yellow', center=(r.centerx, r.bottom - 18 + lift))
+    pages = (LEVEL_COUNT - 1) // LEVELS_PER_PAGE + 1
+    if level_page > 0:
+        prev_btn.draw()
+    if level_page < pages - 1:
+        next_btn.draw()
+    say('%d / %d' % (level_page + 1, pages), 24, UI_FONT, center=(WIDTH / 2, 630))
+    screen.blit('star_on', (180, 666))
+    say('%d / %d stars' % (sum(stars.values()), LEVEL_COUNT * 3), 18, UI_FONT, 'yellow', midleft=(204, 675))
 
 
 def draw_help():
-    # "How to play" page: a picture and one line for each rule
-    screen.fill((8, 30, 60))
-    screen.draw.text('How to play', center=(WIDTH / 2, 40), fontsize=44, color=(120, 240, 200))
-    rows = [
-        ('sub', 'Arrows / WASD move,  SPACE throw net'),
-        ('bottle', 'Catch trash with nets or touch it'),
-        ('oil_small', 'Oil: 3 hits, splits. Touching slows you'),
-        ('turtle_trapped', 'Shoot the bag to save the turtle'),
-        ('fish_left', "Don't hit sea life (-20 points)"),
-        ('jelly', 'Jellyfish sting: avoid them'),
-        ('barrel', 'Toxic barrels from the POLLUTER hurt'),
-        ('pu_vacuum', 'V: vacuum all trash around you'),
-        ('pu_triple', 'Triple net, shield and health power-ups'),
-    ]
-    y = 95
-    for image, text in rows:
-        a = Actor(image, center=(50, y))
-        a.draw()
-        screen.draw.text(text, midleft=(95, y), fontsize=22, color='white')
-        y += 58
-    screen.draw.text('Trash that sinks hurts the ocean. P pause, R restart', center=(WIDTH / 2, 625),
-                     fontsize=20, color='orange')
-    screen.draw.text('Press ESC or click to go back', center=(WIDTH / 2, 665), fontsize=22, color='yellow')
+    menu_bg.draw()
+    back_btn.draw()
+    say('HOW TO PLAY', 30, TITLE_FONT, center=(WIDTH / 2 + 20, 42))
+    # tabs: click one, or use the arrow keys
+    for i, (name, rows) in enumerate(HELP_PAGES):
+        r = help_tab_rect(i)
+        active = i == help_page
+        glass(r.x, r.y, r.w, r.h, (247, 134, 30) if active else (8, 30, 60), 240 if active else 190,
+              (255, 255, 255) if active else (120, 240, 200), 14)
+        say(name, 15, UI_FONT, center=r.center, outline=1)
+    title, rows = HELP_PAGES[help_page]
+    glass(20, 120, WIDTH - 40, 470, alpha=215)
+    for i, (image, head, text) in enumerate(rows):
+        y = 175 + i * 108
+        # every picture bobs gently, each one a little later than the one above
+        bob = math.sin(frame / 18 + i) * 4
+        glass(36, y - 42, 84, 84, (20, 60, 100), 200, None, 16)
+        draw_fitted(image, (78, y + bob), 70)
+        say(head, 24, UI_FONT, 'yellow', topleft=(136, y - 34))
+        screen.draw.text(text, topleft=(136, y - 2), width=WIDTH - 180, fontname=TEXT_FONT,
+                         fontsize=19, color='white')
+    prev_btn.draw()
+    next_btn.draw()
+    say('%d / %d' % (help_page + 1, len(HELP_PAGES)), 24, UI_FONT, center=(WIDTH / 2, 630))
+    say('Arrow keys or click the tabs', 16, UI_FONT, (120, 240, 200), center=(WIDTH / 2, 672))
+
+
+fitted = {}     # pictures already shrunk for the help page
+
+
+def draw_fitted(name, center, size):
+    # draw a picture shrunk to fit a size x size box (the boss is too big for the help box)
+    if name not in fitted:
+        surf = getattr(images, name)
+        k = min(1, size / surf.get_width(), size / surf.get_height())
+        fitted[name] = pygame.transform.smoothscale(
+            surf, (int(surf.get_width() * k), int(surf.get_height() * k)))
+    s = fitted[name]
+    screen.blit(s, (center[0] - s.get_width() / 2, center[1] - s.get_height() / 2))
+
+
+def help_tab_rect(i):
+    return Rect(14 + i * 91, 74, 86, 34)
 
 
 # 8. INPUT (Pygame Zero calls these when a key or the mouse is used)
 # Keys held down (movement, SPACE) are read in update_sub() with "keyboard".
 # Single presses are handled here, depending on the current state.
 def on_key_down(key):
-    global state, paused, muted
+    global state, paused, muted, level_page, help_page
     # M works on every screen
     if key == keys.M:
         muted = not muted
         if muted:
             stop_music()
-        elif state not in ('gameover', 'win'):
+        elif state != 'gameover':
             start_music()
         if state == 'play':
             float_text('Sound OFF' if muted else 'Sound ON', WIDTH / 2, HUD_H + 40, 'orange')
         return
 
+    enter = key in (keys.RETURN, keys.KP_ENTER)
     if state == 'menu':
-        if key == keys.RETURN:
-            new_game()
+        if enter:
+            open_levels()
     elif state == 'help':
-        state = 'menu'
+        if key == keys.LEFT:
+            help_page = (help_page - 1) % len(HELP_PAGES)
+        elif key == keys.RIGHT:
+            help_page = (help_page + 1) % len(HELP_PAGES)
+        elif key in (keys.ESCAPE, keys.BACKSPACE):
+            state = 'menu'
+    elif state == 'levels':
+        pages = (LEVEL_COUNT - 1) // LEVELS_PER_PAGE + 1
+        if key == keys.LEFT:
+            level_page = max(0, level_page - 1)
+        elif key == keys.RIGHT:
+            level_page = min(pages - 1, level_page + 1)
+        elif enter:
+            start_level(unlocked)            # ENTER plays the newest level
+        elif key == keys.ESCAPE:
+            state = 'menu'
     elif state == 'intro':
-        if key == keys.RETURN:
+        if enter:
             state = 'play'
         elif key == keys.ESCAPE:
-            go_menu()
+            open_levels()
     elif state == 'play':
         if key == keys.P:
             paused = not paused
         elif key == keys.R:
-            new_game()
+            start_level(level)
         elif key == keys.ESCAPE:
-            go_menu()
+            open_levels()
         elif key == keys.V and not paused:
             use_vacuum()
-    elif state in ('gameover', 'win'):
-        if key == keys.RETURN:
-            new_game()
+    elif state == 'clear':
+        if enter and level < LEVEL_COUNT:
+            start_level(level + 1)
+        elif key == keys.R:
+            start_level(level)
         elif key == keys.ESCAPE:
-            go_menu()
-
-
-def go_menu():
-    global state
-    state = 'menu'
+            open_levels()
+    elif state == 'gameover':
+        if enter or key == keys.R:
+            start_level(level)
+        elif key == keys.ESCAPE:
+            open_levels()
 
 
 def on_mouse_move(pos):
-    # button hover effect: switch to the _hover picture when the mouse is over it
-    if state != 'menu':
-        return
-    for name, b in buttons.items():
-        b.image = 'btn_%s_hover' % name if b.collidepoint(pos) else 'btn_%s' % name
+    global hover_tile
+    if state == 'menu':
+        for name, b in buttons.items():
+            hover_image(b, 'btn_' + name, pos)
+    elif state in ('levels', 'help'):
+        hover_image(back_btn, 'btn_back', pos)
+        hover_image(prev_btn, 'btn_prev', pos)
+        hover_image(next_btn, 'btn_next', pos)
+        if state == 'levels':
+            n = tile_at(pos)
+            hover_tile = n if n is not None and n <= unlocked else None
+    elif state in ('clear', 'gameover'):
+        for name, b in panel_buttons.items():
+            hover_image(b, 'pb_' + name, pos)
 
 
 def on_mouse_down(pos):
-    global state
-    if state == 'help':
-        state = 'menu'
-    elif state == 'menu':
+    global state, level_page, help_page
+    if state == 'menu':
         if buttons['start'].collidepoint(pos):
-            new_game()
+            open_levels()
         elif buttons['help'].collidepoint(pos):
             state = 'help'
         elif buttons['quit'].collidepoint(pos):
             sys.exit()
+    elif state == 'help':
+        if back_btn.collidepoint(pos):
+            state = 'menu'
+        elif prev_btn.collidepoint(pos):
+            help_page = (help_page - 1) % len(HELP_PAGES)
+        elif next_btn.collidepoint(pos):
+            help_page = (help_page + 1) % len(HELP_PAGES)
+        for i in range(len(HELP_PAGES)):
+            if help_tab_rect(i).collidepoint(pos):
+                help_page = i
+    elif state == 'levels':
+        pages = (LEVEL_COUNT - 1) // LEVELS_PER_PAGE + 1
+        if back_btn.collidepoint(pos):
+            state = 'menu'
+        elif prev_btn.collidepoint(pos) and level_page > 0:
+            level_page -= 1
+        elif next_btn.collidepoint(pos) and level_page < pages - 1:
+            level_page += 1
+        else:
+            n = tile_at(pos)
+            if n is not None and n <= unlocked:      # locked levels cannot be played yet
+                start_level(n)
+    elif state == 'intro':
+        state = 'play'
+    elif state == 'clear':
+        if level < LEVEL_COUNT and panel_buttons['next'].collidepoint(pos):
+            start_level(level + 1)
+        elif panel_buttons['retry'].collidepoint(pos):
+            start_level(level)
+        elif panel_buttons['levels'].collidepoint(pos):
+            open_levels()
+    elif state == 'gameover':
+        if panel_buttons['retry'].collidepoint(pos):
+            start_level(level)
+        elif panel_buttons['levels'].collidepoint(pos):
+            open_levels()
 
 
 # 9. START
-load_high_score()
+load_progress()
 os.environ['SDL_VIDEO_CENTERED'] = '1'      # open the window in the middle of the screen
 pgzrun.go()                                 # start the Pygame Zero game loop
